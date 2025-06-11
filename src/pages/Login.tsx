@@ -1,11 +1,12 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 const Login = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -15,12 +16,25 @@ const Login = () => {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
+  
   const navigate = useNavigate();
   const location = useLocation();
+  const { signIn, signUp, user } = useAuth();
 
   // Get the job ID if user was trying to apply for a specific job
   const from = location.state?.from || '/dashboard';
   const jobId = location.state?.jobId;
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      if (jobId) {
+        navigate(`/apply/${jobId}`);
+      } else {
+        navigate(from);
+      }
+    }
+  }, [user, navigate, from, jobId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,23 +42,22 @@ const Login = () => {
 
     try {
       if (isLogin) {
-        // Login logic would go here with Supabase
-        console.log('Login attempt:', { email, password });
+        const { error } = await signIn(email, password);
         
-        // Simulate successful login
-        toast({
-          title: "Login Successful",
-          description: "Welcome back!",
-        });
-        
-        // Redirect to intended page or dashboard
-        if (jobId) {
-          navigate(`/apply/${jobId}`);
+        if (error) {
+          toast({
+            title: "Login Failed",
+            description: error.message,
+            variant: "destructive",
+          });
         } else {
-          navigate(from);
+          toast({
+            title: "Login Successful",
+            description: "Welcome back!",
+          });
         }
       } else {
-        // Registration logic would go here with Supabase
+        // Registration
         if (password !== confirmPassword) {
           toast({
             title: "Error",
@@ -54,19 +67,28 @@ const Login = () => {
           return;
         }
         
-        console.log('Registration attempt:', { email, password, fullName, phone });
+        if (password.length < 6) {
+          toast({
+            title: "Error",
+            description: "Password must be at least 6 characters long",
+            variant: "destructive",
+          });
+          return;
+        }
         
-        // Simulate successful registration
-        toast({
-          title: "Registration Successful",
-          description: "Welcome! Please verify your email.",
-        });
+        const { error } = await signUp(email, password, fullName, phone);
         
-        // Redirect to intended page or dashboard
-        if (jobId) {
-          navigate(`/apply/${jobId}`);
+        if (error) {
+          toast({
+            title: "Registration Failed",
+            description: error.message,
+            variant: "destructive",
+          });
         } else {
-          navigate('/dashboard');
+          toast({
+            title: "Registration Successful",
+            description: "Please check your email to verify your account.",
+          });
         }
       }
     } catch (error) {
@@ -144,6 +166,7 @@ const Login = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={6}
               />
             </div>
             
@@ -157,6 +180,7 @@ const Login = () => {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
+                  minLength={6}
                 />
               </div>
             )}

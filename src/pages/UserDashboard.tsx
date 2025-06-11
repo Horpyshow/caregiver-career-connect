@@ -1,14 +1,17 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { MapPin, Calendar, FileText, Download, Eye } from 'lucide-react';
+import { MapPin, Calendar, FileText, Download, Eye, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 
-// Sample user applications data
+// Sample user applications data (will be replaced with real data later)
 const sampleApplications = [
   {
     id: 1,
@@ -40,21 +43,69 @@ const sampleApplications = [
   }
 ];
 
-// Sample user profile data
-const sampleProfile = {
-  name: "John Doe",
-  email: "john.doe@email.com",
-  phone: "(555) 123-4567",
-  address: "123 Main St, New York, NY 10001",
-  experience: "3 years",
-  certifications: ["CNA", "CPR", "First Aid"],
-  avatar: ""
-};
-
 const UserDashboard = () => {
   const [applications, setApplications] = useState(sampleApplications);
-  const [profile, setProfile] = useState(sampleProfile);
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { user, signOut } = useAuth();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+  }, [user, navigate]);
+
+  // Fetch user profile
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!user) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        if (error) {
+          console.error('Error fetching profile:', error);
+          toast({
+            title: "Error",
+            description: "Failed to load profile data",
+            variant: "destructive",
+          });
+        } else {
+          setProfile(data);
+        }
+      } catch (error) {
+        console.error('Error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, [user]);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      toast({
+        title: "Signed Out",
+        description: "You have been successfully signed out.",
+      });
+      navigate('/');
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to sign out. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -86,12 +137,30 @@ const UserDashboard = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null; // Will redirect to login
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Dashboard</h1>
-          <p className="text-muted-foreground">Manage your job applications and profile</p>
+        <div className="mb-8 flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground mb-2">Dashboard</h1>
+            <p className="text-muted-foreground">Welcome back, {profile?.full_name || user.email}</p>
+          </div>
+          <Button variant="outline" onClick={handleSignOut}>
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign Out
+          </Button>
         </div>
 
         <Tabs defaultValue="applications" className="space-y-6">
@@ -173,19 +242,18 @@ const UserDashboard = () => {
             <Card>
               <CardHeader>
                 <CardTitle>Profile Information</CardTitle>
-                <CardDescription>Update your personal and professional information</CardDescription>
+                <CardDescription>Your personal and professional information</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="flex items-center gap-4">
                   <Avatar className="h-20 w-20">
-                    <AvatarImage src={profile.avatar} />
                     <AvatarFallback className="text-lg">
-                      {profile.name.split(' ').map(n => n[0]).join('')}
+                      {profile?.full_name ? profile.full_name.split(' ').map(n => n[0]).join('') : user.email?.[0]?.toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <h3 className="text-xl font-semibold">{profile.name}</h3>
-                    <p className="text-muted-foreground">{profile.email}</p>
+                    <h3 className="text-xl font-semibold">{profile?.full_name || 'User'}</h3>
+                    <p className="text-muted-foreground">{user.email}</p>
                   </div>
                 </div>
 
@@ -193,25 +261,16 @@ const UserDashboard = () => {
                   <div>
                     <h4 className="font-medium mb-2">Contact Information</h4>
                     <div className="space-y-2 text-sm">
-                      <p><span className="font-medium">Phone:</span> {profile.phone}</p>
-                      <p><span className="font-medium">Address:</span> {profile.address}</p>
+                      <p><span className="font-medium">Email:</span> {user.email}</p>
+                      <p><span className="font-medium">Phone:</span> {profile?.phone || 'Not provided'}</p>
                     </div>
                   </div>
                   
                   <div>
-                    <h4 className="font-medium mb-2">Professional Information</h4>
+                    <h4 className="font-medium mb-2">Account Information</h4>
                     <div className="space-y-2 text-sm">
-                      <p><span className="font-medium">Experience:</span> {profile.experience}</p>
-                      <div>
-                        <span className="font-medium">Certifications:</span>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {profile.certifications.map((cert, index) => (
-                            <Badge key={index} variant="secondary" className="text-xs">
-                              {cert}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
+                      <p><span className="font-medium">Member since:</span> {new Date(user.created_at).toLocaleDateString()}</p>
+                      <p><span className="font-medium">Email verified:</span> {user.email_confirmed_at ? 'Yes' : 'No'}</p>
                     </div>
                   </div>
                 </div>
@@ -231,7 +290,9 @@ const UserDashboard = () => {
                 <Button variant="outline">Change Password</Button>
                 <Button variant="outline">Email Preferences</Button>
                 <Button variant="outline">Privacy Settings</Button>
-                <Button variant="destructive">Delete Account</Button>
+                <Button variant="destructive" onClick={handleSignOut}>
+                  Sign Out
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>
