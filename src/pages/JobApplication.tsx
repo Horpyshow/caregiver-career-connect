@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,8 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Upload, FileText, MapPin, DollarSign } from 'lucide-react';
+import { FileText, MapPin, DollarSign, LogOut, LogIn, Building2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Sample job data - would be fetched from Supabase based on jobId
 const getJobById = (id: string) => {
@@ -32,6 +33,7 @@ const getJobById = (id: string) => {
 const JobApplication = () => {
   const { jobId } = useParams();
   const navigate = useNavigate();
+  const { user, signOut, loading: authLoading } = useAuth();
   const job = getJobById(jobId || '1');
   
   const [formData, setFormData] = useState({
@@ -59,6 +61,23 @@ const JobApplication = () => {
   
   const [loading, setLoading] = useState(false);
 
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate('/login');
+    }
+  }, [user, authLoading, navigate]);
+
+  // Pre-fill user data if available
+  useEffect(() => {
+    if (user) {
+      setFormData(prev => ({
+        ...prev,
+        email: user.email || ''
+      }));
+    }
+  }, [user]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -71,11 +90,27 @@ const JobApplication = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to submit an application.",
+        variant: "destructive",
+      });
+      navigate('/login');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Here you would submit to Supabase
-      console.log('Application data:', { formData, files, jobId });
+      // Here you would submit to Supabase with user authentication
+      console.log('Application data:', { 
+        formData, 
+        files, 
+        jobId, 
+        userId: user.id 
+      });
       
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -97,17 +132,82 @@ const JobApplication = () => {
     }
   };
 
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
+
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render the form if user is not authenticated (will redirect)
+  if (!user) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-background">
+      {/* Header with Logo Space and Auth Buttons */}
+      <div className="bg-card border-b">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              {/* Company Logo Space */}
+              <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center">
+                <Building2 className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-foreground">CareConnect</h1>
+                <p className="text-sm text-muted-foreground">Career Portal</p>
+              </div>
+            </div>
+            
+            {/* Auth Buttons */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-muted-foreground">
+                  Welcome, {user.email}
+                </span>
+                <Button variant="outline" onClick={() => navigate('/jobs')}>
+                  Back to Jobs
+                </Button>
+                <Button variant="outline" onClick={() => navigate('/dashboard')}>
+                  Dashboard
+                </Button>
+                <Button variant="outline" onClick={handleSignOut}>
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           {/* Job Details */}
           <Card className="mb-8">
             <CardHeader>
               <div className="flex justify-between items-start">
-                <div>
-                  <CardTitle className="text-2xl mb-2">{job.title}</CardTitle>
-                  <CardDescription className="text-lg font-medium text-primary">{job.company}</CardDescription>
+                <div className="flex items-center gap-4">
+                  {/* Company Logo Placeholder */}
+                  <div className="w-12 h-12 bg-muted rounded flex items-center justify-center flex-shrink-0">
+                    <Building2 className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-2xl mb-2">{job.title}</CardTitle>
+                    <CardDescription className="text-lg font-medium text-primary">{job.company}</CardDescription>
+                  </div>
                 </div>
                 <Badge variant="secondary">{job.type}</Badge>
               </div>
@@ -168,6 +268,8 @@ const JobApplication = () => {
                         value={formData.email}
                         onChange={handleInputChange}
                         required
+                        disabled
+                        className="bg-muted"
                       />
                     </div>
                     <div className="space-y-2">

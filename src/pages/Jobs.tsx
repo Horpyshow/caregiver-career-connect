@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Clock, DollarSign, Search } from 'lucide-react';
+import { MapPin, Clock, DollarSign, Search, LogOut, LogIn, Building2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Sample job data - would come from Supabase
 const sampleJobs = [
@@ -64,6 +65,7 @@ const Jobs = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const jobsPerPage = 6;
   const navigate = useNavigate();
+  const { user, signOut } = useAuth();
 
   // Filter and sort jobs
   const filteredJobs = jobs.filter(job => {
@@ -80,15 +82,64 @@ const Jobs = () => {
   const paginatedJobs = filteredJobs.slice(startIndex, startIndex + jobsPerPage);
 
   const handleJobClick = (jobId: number) => {
-    // Would check if user is authenticated, if not redirect to login
+    if (!user) {
+      navigate('/login');
+      return;
+    }
     navigate(`/apply/${jobId}`);
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
   };
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Header with Logo Space and Auth Buttons */}
+      <div className="bg-card border-b">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              {/* Company Logo Space */}
+              <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center">
+                <Building2 className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-foreground">CareConnect</h1>
+                <p className="text-sm text-muted-foreground">Career Portal</p>
+              </div>
+            </div>
+            
+            {/* Auth Buttons */}
+            <div className="flex items-center gap-4">
+              {user ? (
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-muted-foreground">
+                    Welcome, {user.email}
+                  </span>
+                  <Button variant="outline" onClick={() => navigate('/dashboard')}>
+                    Dashboard
+                  </Button>
+                  <Button variant="outline" onClick={handleSignOut}>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Logout
+                  </Button>
+                </div>
+              ) : (
+                <Button onClick={() => navigate('/login')}>
+                  <LogIn className="h-4 w-4 mr-2" />
+                  Login
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-foreground mb-4">Caregiver Jobs</h1>
+          <h2 className="text-4xl font-bold text-foreground mb-4">Caregiver Jobs</h2>
           <p className="text-muted-foreground text-lg">Find rewarding opportunities to make a difference in people's lives</p>
         </div>
 
@@ -137,9 +188,15 @@ const Jobs = () => {
             <Card key={job.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => handleJobClick(job.id)}>
               <CardHeader>
                 <div className="flex justify-between items-start">
-                  <div>
-                    <CardTitle className="text-xl mb-2">{job.title}</CardTitle>
-                    <CardDescription className="text-lg font-medium text-primary">{job.company}</CardDescription>
+                  <div className="flex items-center gap-4">
+                    {/* Company Logo Placeholder */}
+                    <div className="w-10 h-10 bg-muted rounded flex items-center justify-center flex-shrink-0">
+                      <Building2 className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-xl mb-2">{job.title}</CardTitle>
+                      <CardDescription className="text-lg font-medium text-primary">{job.company}</CardDescription>
+                    </div>
                   </div>
                   <Badge variant="secondary">{job.type}</Badge>
                 </div>
@@ -168,7 +225,9 @@ const Jobs = () => {
                     ))}
                   </ul>
                 </div>
-                <Button className="w-full md:w-auto">Apply Now</Button>
+                <Button className="w-full md:w-auto">
+                  {user ? 'Apply Now' : 'Login to Apply'}
+                </Button>
               </CardContent>
             </Card>
           ))}
