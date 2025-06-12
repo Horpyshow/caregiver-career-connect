@@ -1,94 +1,109 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { FileText, MapPin, DollarSign, LogOut, LogIn, Building2 } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
+import { ArrowLeft, Building2, LogOut, LogIn } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { toast } from '@/hooks/use-toast';
 
-// Sample job data - would be fetched from Supabase based on jobId
-const getJobById = (id: string) => {
-  const jobs = [
-    {
-      id: 1,
-      title: "Home Health Aide",
-      company: "CompassCare Services",
-      location: "New York, NY",
-      type: "Full-time",
-      salary: "$18-22/hour",
-      description: "Provide personal care and companionship to elderly clients in their homes.",
-      requirements: ["CNA certification preferred", "1+ years experience", "Reliable transportation"]
-    }
-  ];
-  
-  return jobs.find(job => job.id === parseInt(id)) || jobs[0];
-};
+interface Job {
+  id: string;
+  title: string;
+  company: string;
+  location: string;
+  type: string;
+  salary: string;
+  description: string;
+  requirements: string;
+}
 
 const JobApplication = () => {
-  const { jobId } = useParams();
+  const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
-  const { user, signOut, loading: authLoading } = useAuth();
-  const job = getJobById(jobId || '1');
+  const { user, signOut } = useAuth();
   
   const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
+    fullName: '',
+    email: user?.email || '',
     phone: '',
-    address: '',
-    city: '',
-    state: '',
-    zipCode: '',
-    experience: '',
-    availability: '',
-    certifications: '',
-    references: '',
     coverLetter: '',
-    expectedSalary: ''
+    experience: ''
   });
-  
-  const [files, setFiles] = useState<{ [key: string]: File | null }>({
-    resume: null,
-    certifications: null,
-    references: null
+
+  // Fetch job details
+  const { data: job, isLoading: jobLoading, error: jobError } = useQuery({
+    queryKey: ['job', jobId],
+    queryFn: async () => {
+      if (!jobId) throw new Error('No job ID provided');
+      
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('id', jobId)
+        .single();
+      
+      if (error) {
+        console.error('Error fetching job:', error);
+        throw error;
+      }
+      
+      return data as Job;
+    },
+    enabled: !!jobId,
   });
-  
-  const [loading, setLoading] = useState(false);
 
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!authLoading && !user) {
-      navigate('/login');
-    }
-  }, [user, authLoading, navigate]);
+  // Submit application mutation
+  const submitApplication = useMutation({
+    mutationFn: async (applicationData: typeof formData) => {
+      if (!user) throw new Error('User not authenticated');
+      if (!jobId) throw new Error('No job ID provided');
 
-  // Pre-fill user data if available
-  useEffect(() => {
-    if (user) {
-      setFormData(prev => ({
-        ...prev,
-        email: user.email || ''
-      }));
-    }
-  }, [user]);
+      const { error } = await supabase
+        .from('applications')
+        .insert({
+          job_id: jobId,
+          applicant_id: user.id,
+          full_name: applicationData.fullName,
+          email: applicationData.email,
+          phone: applicationData.phone,
+          cover_letter: applicationData.coverLetter,
+          experience: applicationData.experience,
+        });
+
+      if (error) {
+        console.error('Error submitting application:', error);
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      toast({
+        title: "Application Submitted",
+        description: "Your application has been submitted successfully!",
+      });
+      navigate('/jobs');
+    },
+    onError: (error) => {
+      console.error('Application submission error:', error);
+      toast({
+        title: "Error",
+        description: "Failed to submit application. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, fileType: string) => {
-    const file = e.target.files?.[0] || null;
-    setFiles(prev => ({ ...prev, [fileType]: file }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!user) {
@@ -101,35 +116,16 @@ const JobApplication = () => {
       return;
     }
 
-    setLoading(true);
-
-    try {
-      // Here you would submit to Supabase with user authentication
-      console.log('Application data:', { 
-        formData, 
-        files, 
-        jobId, 
-        userId: user.id 
-      });
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
+    if (!formData.fullName || !formData.email || !formData.phone) {
       toast({
-        title: "Application Submitted",
-        description: "Your application has been submitted successfully!",
-      });
-      
-      navigate('/dashboard');
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to submit application. Please try again.",
+        title: "Missing Information",
+        description: "Please fill in all required fields.",
         variant: "destructive",
       });
-    } finally {
-      setLoading(false);
+      return;
     }
+
+    submitApplication.mutate(formData);
   };
 
   const handleSignOut = async () => {
@@ -137,21 +133,48 @@ const JobApplication = () => {
     navigate('/');
   };
 
-  // Show loading while checking authentication
-  if (authLoading) {
+  const formatRequirements = (requirements: string) => {
+    return requirements.split(/[\n,]/).filter(req => req.trim()).map(req => req.trim());
+  };
+
+  if (!user) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-center">Login Required</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-muted-foreground mb-4">
+              Please log in to apply for this job.
+            </p>
+            <Button onClick={() => navigate('/login')} className="w-full">
+              Go to Login
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
-  // Don't render the form if user is not authenticated (will redirect)
-  if (!user) {
-    return null;
+  if (jobLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Loading job details...</p>
+      </div>
+    );
+  }
+
+  if (jobError || !job) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-foreground mb-4">Job Not Found</h2>
+          <p className="text-muted-foreground mb-4">The job you're looking for doesn't exist.</p>
+          <Button onClick={() => navigate('/jobs')}>Back to Jobs</Button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -173,310 +196,163 @@ const JobApplication = () => {
             
             {/* Auth Buttons */}
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-muted-foreground">
-                  Welcome, {user.email}
-                </span>
-                <Button variant="outline" onClick={() => navigate('/jobs')}>
-                  Back to Jobs
+              {user ? (
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-muted-foreground">
+                    Welcome, {user.email}
+                  </span>
+                  <Button variant="outline" onClick={() => navigate('/dashboard')}>
+                    Dashboard
+                  </Button>
+                  <Button variant="outline" onClick={handleSignOut}>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Logout
+                  </Button>
+                </div>
+              ) : (
+                <Button onClick={() => navigate('/login')}>
+                  <LogIn className="h-4 w-4 mr-2" />
+                  Login
                 </Button>
-                <Button variant="outline" onClick={() => navigate('/dashboard')}>
-                  Dashboard
-                </Button>
-                <Button variant="outline" onClick={handleSignOut}>
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Logout
-                </Button>
-              </div>
+              )}
             </div>
           </div>
         </div>
       </div>
 
       <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
+        <Button 
+          variant="outline" 
+          onClick={() => navigate('/jobs')}
+          className="mb-6"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Jobs
+        </Button>
+
+        <div className="grid lg:grid-cols-2 gap-8">
           {/* Job Details */}
-          <Card className="mb-8">
+          <Card>
             <CardHeader>
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-4">
-                  {/* Company Logo Placeholder */}
-                  <div className="w-12 h-12 bg-muted rounded flex items-center justify-center flex-shrink-0">
-                    <Building2 className="h-6 w-6 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-2xl mb-2">{job.title}</CardTitle>
-                    <CardDescription className="text-lg font-medium text-primary">{job.company}</CardDescription>
-                  </div>
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 bg-muted rounded flex items-center justify-center">
+                  <Building2 className="h-6 w-6 text-muted-foreground" />
                 </div>
-                <Badge variant="secondary">{job.type}</Badge>
+                <div>
+                  <CardTitle className="text-2xl">{job.title}</CardTitle>
+                  <p className="text-lg font-medium text-primary">{job.company}</p>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-4 mb-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-1">
-                  <MapPin className="h-4 w-4" />
-                  {job.location}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="font-semibold mb-2">Job Details</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Location:</span>
+                      <p className="font-medium">{job.location}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Type:</span>
+                      <p className="font-medium">{job.type}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Salary:</span>
+                      <p className="font-medium">{job.salary}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <DollarSign className="h-4 w-4" />
-                  {job.salary}
+                
+                <div>
+                  <h3 className="font-semibold mb-2">Description</h3>
+                  <p className="text-sm text-muted-foreground">{job.description}</p>
+                </div>
+                
+                <div>
+                  <h3 className="font-semibold mb-2">Requirements</h3>
+                  <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                    {formatRequirements(job.requirements).map((req, index) => (
+                      <li key={index}>{req}</li>
+                    ))}
+                  </ul>
                 </div>
               </div>
-              <p className="text-foreground mb-4">{job.description}</p>
             </CardContent>
           </Card>
 
           {/* Application Form */}
           <Card>
             <CardHeader>
-              <CardTitle>Job Application</CardTitle>
-              <CardDescription>Please fill in all required information</CardDescription>
+              <CardTitle>Apply for this Position</CardTitle>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Personal Information */}
+              <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <h3 className="text-lg font-semibold mb-4">Personal Information</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="firstName">First Name *</Label>
-                      <Input
-                        id="firstName"
-                        name="firstName"
-                        value={formData.firstName}
-                        onChange={handleInputChange}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="lastName">Last Name *</Label>
-                      <Input
-                        id="lastName"
-                        name="lastName"
-                        value={formData.lastName}
-                        onChange={handleInputChange}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email *</Label>
-                      <Input
-                        id="email"
-                        name="email"
-                        type="email"
-                        value={formData.email}
-                        onChange={handleInputChange}
-                        required
-                        disabled
-                        className="bg-muted"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">Phone Number *</Label>
-                      <Input
-                        id="phone"
-                        name="phone"
-                        type="tel"
-                        value={formData.phone}
-                        onChange={handleInputChange}
-                        required
-                      />
-                    </div>
-                  </div>
+                  <Label htmlFor="fullName">Full Name *</Label>
+                  <Input
+                    id="fullName"
+                    name="fullName"
+                    value={formData.fullName}
+                    onChange={handleInputChange}
+                    required
+                  />
                 </div>
 
-                {/* Address */}
                 <div>
-                  <h3 className="text-lg font-semibold mb-4">Address</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="address">Street Address *</Label>
-                      <Input
-                        id="address"
-                        name="address"
-                        value={formData.address}
-                        onChange={handleInputChange}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="city">City *</Label>
-                      <Input
-                        id="city"
-                        name="city"
-                        value={formData.city}
-                        onChange={handleInputChange}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="state">State *</Label>
-                      <Input
-                        id="state"
-                        name="state"
-                        value={formData.state}
-                        onChange={handleInputChange}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="zipCode">ZIP Code *</Label>
-                      <Input
-                        id="zipCode"
-                        name="zipCode"
-                        value={formData.zipCode}
-                        onChange={handleInputChange}
-                        required
-                      />
-                    </div>
-                  </div>
+                  <Label htmlFor="email">Email *</Label>
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    required
+                  />
                 </div>
 
-                {/* Professional Information */}
                 <div>
-                  <h3 className="text-lg font-semibold mb-4">Professional Information</h3>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="experience">Years of Experience *</Label>
-                      <Select value={formData.experience} onValueChange={(value) => setFormData(prev => ({ ...prev, experience: value }))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select experience level" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="0-1">0-1 years</SelectItem>
-                          <SelectItem value="2-5">2-5 years</SelectItem>
-                          <SelectItem value="6-10">6-10 years</SelectItem>
-                          <SelectItem value="10+">10+ years</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="availability">Availability *</Label>
-                      <Select value={formData.availability} onValueChange={(value) => setFormData(prev => ({ ...prev, availability: value }))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select availability" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="immediate">Immediate</SelectItem>
-                          <SelectItem value="2-weeks">2 weeks notice</SelectItem>
-                          <SelectItem value="1-month">1 month notice</SelectItem>
-                          <SelectItem value="flexible">Flexible</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="expectedSalary">Expected Salary</Label>
-                      <Input
-                        id="expectedSalary"
-                        name="expectedSalary"
-                        placeholder="e.g., $18/hour or $35,000/year"
-                        value={formData.expectedSalary}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="certifications">Certifications & Licenses</Label>
-                      <Textarea
-                        id="certifications"
-                        name="certifications"
-                        placeholder="List any relevant certifications (CNA, CPR, First Aid, etc.)"
-                        value={formData.certifications}
-                        onChange={handleInputChange}
-                        rows={3}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="coverLetter">Cover Letter</Label>
-                      <Textarea
-                        id="coverLetter"
-                        name="coverLetter"
-                        placeholder="Tell us why you're interested in this position and what makes you a great candidate..."
-                        value={formData.coverLetter}
-                        onChange={handleInputChange}
-                        rows={5}
-                      />
-                    </div>
-                  </div>
+                  <Label htmlFor="phone">Phone Number *</Label>
+                  <Input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    value={formData.phone}
+                    onChange={handleInputChange}
+                    required
+                  />
                 </div>
 
-                {/* File Uploads */}
                 <div>
-                  <h3 className="text-lg font-semibold mb-4">Documents</h3>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="resume">Resume/CV *</Label>
-                      <div className="flex items-center gap-4">
-                        <Input
-                          id="resume"
-                          type="file"
-                          accept=".pdf,.doc,.docx"
-                          onChange={(e) => handleFileChange(e, 'resume')}
-                          required
-                        />
-                        {files.resume && (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <FileText className="h-4 w-4" />
-                            {files.resume.name}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="certificationFiles">Certification Documents</Label>
-                      <div className="flex items-center gap-4">
-                        <Input
-                          id="certificationFiles"
-                          type="file"
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          onChange={(e) => handleFileChange(e, 'certifications')}
-                        />
-                        {files.certifications && (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <FileText className="h-4 w-4" />
-                            {files.certifications.name}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="referenceFiles">References</Label>
-                      <div className="flex items-center gap-4">
-                        <Input
-                          id="referenceFiles"
-                          type="file"
-                          accept=".pdf,.doc,.docx"
-                          onChange={(e) => handleFileChange(e, 'references')}
-                        />
-                        {files.references && (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <FileText className="h-4 w-4" />
-                            {files.references.name}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  <Label htmlFor="experience">Years of Experience</Label>
+                  <Input
+                    id="experience"
+                    name="experience"
+                    value={formData.experience}
+                    onChange={handleInputChange}
+                    placeholder="e.g., 2 years"
+                  />
                 </div>
 
-                <div className="flex gap-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => navigate('/jobs')}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={loading}>
-                    {loading ? 'Submitting...' : 'Submit Application'}
-                  </Button>
+                <div>
+                  <Label htmlFor="coverLetter">Cover Letter</Label>
+                  <Textarea
+                    id="coverLetter"
+                    name="coverLetter"
+                    value={formData.coverLetter}
+                    onChange={handleInputChange}
+                    rows={6}
+                    placeholder="Tell us why you're interested in this position..."
+                  />
                 </div>
+
+                <Button 
+                  type="submit" 
+                  className="w-full"
+                  disabled={submitApplication.isPending}
+                >
+                  {submitApplication.isPending ? 'Submitting...' : 'Submit Application'}
+                </Button>
               </form>
             </CardContent>
           </Card>

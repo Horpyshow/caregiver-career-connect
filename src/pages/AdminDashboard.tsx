@@ -9,71 +9,46 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Eye, Download, Edit, Trash2, Users, Briefcase, Clock } from 'lucide-react';
+import { Plus, Eye, Download, Edit, Trash2, Users, Briefcase, Clock, LogOut, Building2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
 
-// Sample data
-const sampleJobs = [
-  {
-    id: 1,
-    title: "Home Health Aide",
-    company: "CompassCare Services",
-    location: "New York, NY",
-    type: "Full-time",
-    salary: "$18-22/hour",
-    status: "active",
-    applicants: 12,
-    posted: "2024-01-10"
-  },
-  {
-    id: 2,
-    title: "Certified Nursing Assistant",
-    company: "Sunrise Senior Living",
-    location: "Los Angeles, CA",
-    type: "Part-time",
-    salary: "$16-20/hour",
-    status: "active",
-    applicants: 8,
-    posted: "2024-01-08"
-  }
-];
+interface Job {
+  id: string;
+  title: string;
+  company: string;
+  location: string;
+  type: string;
+  salary: string;
+  description: string;
+  requirements: string;
+  status: string;
+  created_at: string;
+}
 
-const sampleApplications = [
-  {
-    id: 1,
-    applicantName: "Sarah Johnson",
-    jobTitle: "Home Health Aide",
-    appliedDate: "2024-01-15",
-    status: "under_review",
-    email: "sarah.j@email.com",
-    phone: "(555) 123-4567",
-    experience: "2 years"
-  },
-  {
-    id: 2,
-    applicantName: "Michael Brown",
-    jobTitle: "Home Health Aide",
-    appliedDate: "2024-01-14",
-    status: "interview_scheduled",
-    email: "m.brown@email.com",
-    phone: "(555) 987-6543",
-    experience: "5 years"
-  },
-  {
-    id: 3,
-    applicantName: "Lisa Davis",
-    jobTitle: "Certified Nursing Assistant",
-    appliedDate: "2024-01-13",
-    status: "accepted",
-    email: "lisa.davis@email.com",
-    phone: "(555) 456-7890",
-    experience: "3 years"
-  }
-];
+interface Application {
+  id: string;
+  job_id: string;
+  applicant_id: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  cover_letter: string | null;
+  experience: string | null;
+  status: string;
+  applied_at: string;
+  jobs: {
+    title: string;
+  };
+}
 
 const AdminDashboard = () => {
-  const [jobs, setJobs] = useState(sampleJobs);
-  const [applications, setApplications] = useState(sampleApplications);
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
+  const queryClient = useQueryClient();
   const [isCreatingJob, setIsCreatingJob] = useState(false);
   const [newJob, setNewJob] = useState({
     title: '',
@@ -85,6 +60,140 @@ const AdminDashboard = () => {
     requirements: ''
   });
 
+  // Fetch jobs
+  const { data: jobs = [], isLoading: jobsLoading } = useQuery({
+    queryKey: ['admin-jobs'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data as Job[];
+    },
+  });
+
+  // Fetch applications
+  const { data: applications = [], isLoading: applicationsLoading } = useQuery({
+    queryKey: ['admin-applications'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('applications')
+        .select(`
+          *,
+          jobs (
+            title
+          )
+        `)
+        .order('applied_at', { ascending: false });
+      
+      if (error) throw error;
+      return data as Application[];
+    },
+  });
+
+  // Create job mutation
+  const createJobMutation = useMutation({
+    mutationFn: async (jobData: typeof newJob) => {
+      const { error } = await supabase
+        .from('jobs')
+        .insert({
+          title: jobData.title,
+          company: jobData.company,
+          location: jobData.location,
+          type: jobData.type,
+          salary: jobData.salary,
+          description: jobData.description,
+          requirements: jobData.requirements,
+          status: 'active'
+        });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      setNewJob({
+        title: '',
+        company: '',
+        location: '',
+        type: '',
+        salary: '',
+        description: '',
+        requirements: ''
+      });
+      setIsCreatingJob(false);
+      toast({
+        title: "Job Created",
+        description: "New job posting has been created successfully.",
+      });
+    },
+    onError: (error) => {
+      console.error('Error creating job:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create job. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete job mutation
+  const deleteJobMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      const { error } = await supabase
+        .from('jobs')
+        .delete()
+        .eq('id', jobId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      toast({
+        title: "Job Deleted",
+        description: "Job posting has been deleted successfully.",
+      });
+    },
+    onError: (error) => {
+      console.error('Error deleting job:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete job. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update application status mutation
+  const updateApplicationMutation = useMutation({
+    mutationFn: async ({ applicationId, status }: { applicationId: string; status: string }) => {
+      const { error } = await supabase
+        .from('applications')
+        .update({ status })
+        .eq('id', applicationId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-applications'] });
+      toast({
+        title: "Status Updated",
+        description: "Application status has been updated successfully.",
+      });
+    },
+    onError: (error) => {
+      console.error('Error updating application:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update application status.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const stats = {
     totalJobs: jobs.length,
     activeJobs: jobs.filter(job => job.status === 'active').length,
@@ -93,33 +202,27 @@ const AdminDashboard = () => {
   };
 
   const handleCreateJob = () => {
-    // Would submit to Supabase
-    console.log('Creating job:', newJob);
-    
-    const job = {
-      id: jobs.length + 1,
-      ...newJob,
-      status: 'active',
-      applicants: 0,
-      posted: new Date().toISOString().split('T')[0]
-    };
-    
-    setJobs([...jobs, job]);
-    setNewJob({
-      title: '',
-      company: '',
-      location: '',
-      type: '',
-      salary: '',
-      description: '',
-      requirements: ''
-    });
-    setIsCreatingJob(false);
-    
-    toast({
-      title: "Job Created",
-      description: "New job posting has been created successfully.",
-    });
+    if (!newJob.title || !newJob.company || !newJob.location || !newJob.type || !newJob.salary || !newJob.description || !newJob.requirements) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    createJobMutation.mutate(newJob);
+  };
+
+  const handleDeleteJob = (jobId: string) => {
+    if (confirm('Are you sure you want to delete this job?')) {
+      deleteJobMutation.mutate(jobId);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
   };
 
   const getStatusColor = (status: string) => {
@@ -152,8 +255,81 @@ const AdminDashboard = () => {
     }
   };
 
+  const downloadApplicationData = () => {
+    const csvContent = [
+      ['Applicant Name', 'Job Title', 'Email', 'Phone', 'Experience', 'Status', 'Applied Date'],
+      ...applications.map(app => [
+        app.full_name,
+        app.jobs.title,
+        app.email,
+        app.phone,
+        app.experience || '',
+        getStatusText(app.status),
+        new Date(app.applied_at).toLocaleDateString()
+      ])
+    ].map(row => row.join(',')).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'applications.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-center">Admin Access Required</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-muted-foreground mb-4">
+              Please log in to access the admin dashboard.
+            </p>
+            <Button onClick={() => navigate('/login')} className="w-full">
+              Go to Login
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
+      {/* Header */}
+      <div className="bg-card border-b">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center">
+                <Building2 className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-foreground">CareConnect Admin</h1>
+                <p className="text-sm text-muted-foreground">Management Portal</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground">
+                Welcome, {user.email}
+              </span>
+              <Button variant="outline" onClick={() => navigate('/jobs')}>
+                View Jobs
+              </Button>
+              <Button variant="outline" onClick={handleSignOut}>
+                <LogOut className="h-4 w-4 mr-2" />
+                Logout
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-foreground mb-2">Admin Dashboard</h1>
@@ -236,7 +412,7 @@ const AdminDashboard = () => {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="jobTitle">Job Title</Label>
+                      <Label htmlFor="jobTitle">Job Title *</Label>
                       <Input
                         id="jobTitle"
                         value={newJob.title}
@@ -245,7 +421,7 @@ const AdminDashboard = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="company">Company</Label>
+                      <Label htmlFor="company">Company *</Label>
                       <Input
                         id="company"
                         value={newJob.company}
@@ -254,7 +430,7 @@ const AdminDashboard = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="location">Location</Label>
+                      <Label htmlFor="location">Location *</Label>
                       <Input
                         id="location"
                         value={newJob.location}
@@ -263,7 +439,7 @@ const AdminDashboard = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="salary">Salary</Label>
+                      <Label htmlFor="salary">Salary *</Label>
                       <Input
                         id="salary"
                         value={newJob.salary}
@@ -272,7 +448,7 @@ const AdminDashboard = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="type">Job Type</Label>
+                      <Label htmlFor="type">Job Type *</Label>
                       <Select value={newJob.type} onValueChange={(value) => setNewJob(prev => ({ ...prev, type: value }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select job type" />
@@ -288,7 +464,7 @@ const AdminDashboard = () => {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="description">Job Description</Label>
+                    <Label htmlFor="description">Job Description *</Label>
                     <Textarea
                       id="description"
                       value={newJob.description}
@@ -299,7 +475,7 @@ const AdminDashboard = () => {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="requirements">Requirements</Label>
+                    <Label htmlFor="requirements">Requirements *</Label>
                     <Textarea
                       id="requirements"
                       value={newJob.requirements}
@@ -310,7 +486,12 @@ const AdminDashboard = () => {
                   </div>
                   
                   <div className="flex gap-2">
-                    <Button onClick={handleCreateJob}>Create Job</Button>
+                    <Button 
+                      onClick={handleCreateJob}
+                      disabled={createJobMutation.isPending}
+                    >
+                      {createJobMutation.isPending ? 'Creating...' : 'Create Job'}
+                    </Button>
                     <Button variant="outline" onClick={() => setIsCreatingJob(false)}>Cancel</Button>
                   </div>
                 </CardContent>
@@ -319,99 +500,135 @@ const AdminDashboard = () => {
 
             <Card>
               <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Job Title</TableHead>
-                      <TableHead>Company</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Applicants</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {jobs.map((job) => (
-                      <TableRow key={job.id}>
-                        <TableCell className="font-medium">{job.title}</TableCell>
-                        <TableCell>{job.company}</TableCell>
-                        <TableCell>{job.location}</TableCell>
-                        <TableCell>{job.type}</TableCell>
-                        <TableCell>{job.applicants}</TableCell>
-                        <TableCell>
-                          <Badge variant={job.status === 'active' ? 'default' : 'secondary'}>
-                            {job.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button variant="ghost" size="sm">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                {jobsLoading ? (
+                  <div className="p-8 text-center">
+                    <p className="text-muted-foreground">Loading jobs...</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Job Title</TableHead>
+                        <TableHead>Company</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Created</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {jobs.map((job) => (
+                        <TableRow key={job.id}>
+                          <TableCell className="font-medium">{job.title}</TableCell>
+                          <TableCell>{job.company}</TableCell>
+                          <TableCell>{job.location}</TableCell>
+                          <TableCell>{job.type}</TableCell>
+                          <TableCell>
+                            <Badge variant={job.status === 'active' ? 'default' : 'secondary'}>
+                              {job.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{new Date(job.created_at).toLocaleDateString()}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button variant="ghost" size="sm">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="sm">
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => handleDeleteJob(job.id)}
+                                disabled={deleteJobMutation.isPending}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="applications" className="space-y-6">
-            <h2 className="text-2xl font-semibold">Job Applications</h2>
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-semibold">Job Applications</h2>
+              <Button onClick={downloadApplicationData} variant="outline">
+                <Download className="h-4 w-4 mr-2" />
+                Download CSV
+              </Button>
+            </div>
             
             <Card>
               <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Applicant</TableHead>
-                      <TableHead>Job Applied</TableHead>
-                      <TableHead>Applied Date</TableHead>
-                      <TableHead>Experience</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {applications.map((application) => (
-                      <TableRow key={application.id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{application.applicantName}</p>
-                            <p className="text-sm text-muted-foreground">{application.email}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>{application.jobTitle}</TableCell>
-                        <TableCell>{new Date(application.appliedDate).toLocaleDateString()}</TableCell>
-                        <TableCell>{application.experience}</TableCell>
-                        <TableCell>
-                          <Badge className={getStatusColor(application.status)}>
-                            {getStatusText(application.status)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button variant="ghost" size="sm">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                {applicationsLoading ? (
+                  <div className="p-8 text-center">
+                    <p className="text-muted-foreground">Loading applications...</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Applicant</TableHead>
+                        <TableHead>Job Applied</TableHead>
+                        <TableHead>Applied Date</TableHead>
+                        <TableHead>Experience</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {applications.map((application) => (
+                        <TableRow key={application.id}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{application.full_name}</p>
+                              <p className="text-sm text-muted-foreground">{application.email}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>{application.jobs.title}</TableCell>
+                          <TableCell>{new Date(application.applied_at).toLocaleDateString()}</TableCell>
+                          <TableCell>{application.experience || 'Not specified'}</TableCell>
+                          <TableCell>
+                            <Select
+                              value={application.status}
+                              onValueChange={(status) => 
+                                updateApplicationMutation.mutate({ 
+                                  applicationId: application.id, 
+                                  status 
+                                })
+                              }
+                            >
+                              <SelectTrigger className="w-40">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="under_review">Under Review</SelectItem>
+                                <SelectItem value="interview_scheduled">Interview Scheduled</SelectItem>
+                                <SelectItem value="accepted">Accepted</SelectItem>
+                                <SelectItem value="rejected">Rejected</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button variant="ghost" size="sm">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
