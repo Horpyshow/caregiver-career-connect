@@ -15,6 +15,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
+import { ApplicationModal } from '@/components/ApplicationModal';
+import { JobEditModal } from '@/components/JobEditModal';
 
 interface Job {
   id: string;
@@ -42,6 +44,9 @@ interface Application {
   applied_at: string;
   jobs: {
     title: string;
+    company: string;
+    location: string;
+    salary: string;
   };
 }
 
@@ -50,6 +55,10 @@ const AdminDashboard = () => {
   const { user, isAdmin, signOut } = useAuth();
   const queryClient = useQueryClient();
   const [isCreatingJob, setIsCreatingJob] = useState(false);
+  const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [isApplicationModalOpen, setIsApplicationModalOpen] = useState(false);
+  const [isJobEditModalOpen, setIsJobEditModalOpen] = useState(false);
   const [newJob, setNewJob] = useState({
     title: '',
     company: '',
@@ -83,7 +92,10 @@ const AdminDashboard = () => {
         .select(`
           *,
           jobs (
-            title
+            title,
+            company,
+            location,
+            salary
           )
         `)
         .order('applied_at', { ascending: false });
@@ -134,6 +146,45 @@ const AdminDashboard = () => {
       toast({
         title: "Error",
         description: "Failed to create job. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update job mutation
+  const updateJobMutation = useMutation({
+    mutationFn: async ({ jobId, jobData }: { jobId: string; jobData: Omit<Job, 'id'> }) => {
+      const { error } = await supabase
+        .from('jobs')
+        .update({
+          title: jobData.title,
+          company: jobData.company,
+          location: jobData.location,
+          type: jobData.type,
+          salary: jobData.salary,
+          description: jobData.description,
+          requirements: jobData.requirements,
+          status: jobData.status,
+        })
+        .eq('id', jobId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      setIsJobEditModalOpen(false);
+      setSelectedJob(null);
+      toast({
+        title: "Job Updated",
+        description: "Job posting has been updated successfully.",
+      });
+    },
+    onError: (error) => {
+      console.error('Error updating job:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update job. Please try again.",
         variant: "destructive",
       });
     },
@@ -214,10 +265,25 @@ const AdminDashboard = () => {
     createJobMutation.mutate(newJob);
   };
 
+  const handleEditJob = (job: Job) => {
+    setSelectedJob(job);
+    setIsJobEditModalOpen(true);
+  };
+
+  const handleSaveJob = (jobData: Omit<Job, 'id'>) => {
+    if (!selectedJob) return;
+    updateJobMutation.mutate({ jobId: selectedJob.id, jobData });
+  };
+
   const handleDeleteJob = (jobId: string) => {
     if (confirm('Are you sure you want to delete this job?')) {
       deleteJobMutation.mutate(jobId);
     }
+  };
+
+  const handleViewApplication = (application: Application) => {
+    setSelectedApplication(application);
+    setIsApplicationModalOpen(true);
   };
 
   const handleSignOut = async () => {
@@ -559,10 +625,11 @@ const AdminDashboard = () => {
                           <TableCell>{new Date(job.created_at).toLocaleDateString()}</TableCell>
                           <TableCell>
                             <div className="flex gap-2">
-                              <Button variant="ghost" size="sm">
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="sm">
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => handleEditJob(job)}
+                              >
                                 <Edit className="h-4 w-4" />
                               </Button>
                               <Button 
@@ -646,7 +713,11 @@ const AdminDashboard = () => {
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-2">
-                              <Button variant="ghost" size="sm">
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => handleViewApplication(application)}
+                              >
                                 <Eye className="h-4 w-4" />
                               </Button>
                             </div>
@@ -670,6 +741,25 @@ const AdminDashboard = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Modals */}
+      {selectedApplication && (
+        <ApplicationModal
+          application={selectedApplication}
+          isOpen={isApplicationModalOpen}
+          onClose={() => setIsApplicationModalOpen(false)}
+        />
+      )}
+
+      {selectedJob && (
+        <JobEditModal
+          job={selectedJob}
+          isOpen={isJobEditModalOpen}
+          onClose={() => setIsJobEditModalOpen(false)}
+          onSave={handleSaveJob}
+          isLoading={updateJobMutation.isPending}
+        />
+      )}
     </div>
   );
 };

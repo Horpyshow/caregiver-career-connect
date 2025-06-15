@@ -10,45 +10,60 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { ApplicationModal } from '@/components/ApplicationModal';
+import { useQuery } from '@tanstack/react-query';
 
-// Sample user applications data (will be replaced with real data later)
-const sampleApplications = [
-  {
-    id: 1,
-    jobTitle: "Home Health Aide",
-    company: "CompassCare Services",
-    location: "New York, NY",
-    appliedDate: "2024-01-15",
-    status: "under_review",
-    salary: "$18-22/hour"
-  },
-  {
-    id: 2,
-    jobTitle: "Certified Nursing Assistant",
-    company: "Sunrise Senior Living",
-    location: "Los Angeles, CA",
-    appliedDate: "2024-01-12",
-    status: "interview_scheduled",
-    salary: "$16-20/hour",
-    interviewDate: "2024-01-20"
-  },
-  {
-    id: 3,
-    jobTitle: "Personal Care Assistant",
-    company: "Helping Hands Agency",
-    location: "Houston, TX",
-    appliedDate: "2024-01-10",
-    status: "rejected",
-    salary: "$15-18/hour"
-  }
-];
+interface UserApplication {
+  id: string;
+  job_id: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  cover_letter: string | null;
+  experience: string | null;
+  status: string;
+  applied_at: string;
+  jobs: {
+    title: string;
+    company: string;
+    location: string;
+    salary: string;
+  };
+}
 
 const UserDashboard = () => {
-  const [applications, setApplications] = useState(sampleApplications);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [selectedApplication, setSelectedApplication] = useState<UserApplication | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+
+  // Fetch user applications
+  const { data: applications = [], isLoading: applicationsLoading } = useQuery({
+    queryKey: ['user-applications', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      
+      const { data, error } = await supabase
+        .from('applications')
+        .select(`
+          *,
+          jobs (
+            title,
+            company,
+            location,
+            salary
+          )
+        `)
+        .eq('applicant_id', user.id)
+        .order('applied_at', { ascending: false });
+      
+      if (error) throw error;
+      return data as UserApplication[];
+    },
+    enabled: !!user,
+  });
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -137,7 +152,44 @@ const UserDashboard = () => {
     }
   };
 
-  if (loading) {
+  const downloadApplicationData = (application: UserApplication) => {
+    const data = {
+      applicant: {
+        name: application.full_name,
+        email: application.email,
+        phone: application.phone,
+      },
+      job: {
+        title: application.jobs.title,
+        company: application.jobs.company,
+        location: application.jobs.location,
+        salary: application.jobs.salary,
+      },
+      application: {
+        coverLetter: application.cover_letter,
+        experience: application.experience,
+        status: getStatusText(application.status),
+        appliedDate: new Date(application.applied_at).toLocaleDateString(),
+      },
+    };
+
+    const dataStr = JSON.stringify(data, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    
+    const exportFileDefaultName = `my-application-${application.jobs.title}-${application.jobs.company}.json`;
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+  };
+
+  const viewApplication = (application: UserApplication) => {
+    setSelectedApplication(application);
+    setIsModalOpen(true);
+  };
+
+  if (loading || applicationsLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <p>Loading...</p>
@@ -194,9 +246,9 @@ const UserDashboard = () => {
                     <CardHeader>
                       <div className="flex justify-between items-start">
                         <div>
-                          <CardTitle className="text-xl">{application.jobTitle}</CardTitle>
+                          <CardTitle className="text-xl">{application.jobs.title}</CardTitle>
                           <CardDescription className="text-lg font-medium text-primary">
-                            {application.company}
+                            {application.jobs.company}
                           </CardDescription>
                         </div>
                         <Badge className={getStatusColor(application.status)}>
@@ -208,25 +260,31 @@ const UserDashboard = () => {
                       <div className="flex flex-wrap gap-4 mb-4 text-sm text-muted-foreground">
                         <div className="flex items-center gap-1">
                           <MapPin className="h-4 w-4" />
-                          {application.location}
+                          {application.jobs.location}
                         </div>
                         <div className="flex items-center gap-1">
                           <Calendar className="h-4 w-4" />
-                          Applied: {new Date(application.appliedDate).toLocaleDateString()}
+                          Applied: {new Date(application.applied_at).toLocaleDateString()}
                         </div>
-                        {application.interviewDate && (
-                          <div className="flex items-center gap-1 text-blue-600">
-                            <Calendar className="h-4 w-4" />
-                            Interview: {new Date(application.interviewDate).toLocaleDateString()}
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1">
+                          <FileText className="h-4 w-4" />
+                          Salary: {application.jobs.salary}
+                        </div>
                       </div>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => viewApplication(application)}
+                        >
                           <Eye className="h-4 w-4 mr-2" />
                           View Application
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => downloadApplicationData(application)}
+                        >
                           <Download className="h-4 w-4 mr-2" />
                           Download Documents
                         </Button>
@@ -298,6 +356,14 @@ const UserDashboard = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      {selectedApplication && (
+        <ApplicationModal
+          application={selectedApplication}
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+        />
+      )}
     </div>
   );
 };
