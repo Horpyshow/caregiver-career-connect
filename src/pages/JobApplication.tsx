@@ -26,7 +26,7 @@ interface Job {
 const JobApplication = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
   
   const [formData, setFormData] = useState({
     fullName: '',
@@ -204,6 +204,11 @@ const JobApplication = () => {
                   <Button variant="outline" onClick={() => navigate('/dashboard')}>
                     Dashboard
                   </Button>
+                  {isAdmin && (
+                    <Button variant="outline" onClick={() => navigate('/admin')}>
+                      Admin
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={handleSignOut}>
                     <LogOut className="h-4 w-4 mr-2" />
                     Logout

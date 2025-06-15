@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,7 +31,7 @@ const Jobs = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const jobsPerPage = 6;
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
 
   // Fetch jobs from Supabase
   const { data: jobs = [], isLoading, error } = useQuery({
@@ -129,9 +128,11 @@ const Jobs = () => {
                   <Button variant="outline" onClick={() => navigate('/dashboard')}>
                     Dashboard
                   </Button>
-                  <Button variant="outline" onClick={() => navigate('/admin')}>
-                    Admin
-                  </Button>
+                  {isAdmin && (
+                    <Button variant="outline" onClick={() => navigate('/admin')}>
+                      Admin
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={handleSignOut}>
                     <LogOut className="h-4 w-4 mr-2" />
                     Logout

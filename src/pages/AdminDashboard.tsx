@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Eye, Download, Edit, Trash2, Users, Briefcase, Clock, LogOut, Building2 } from 'lucide-react';
+import { Plus, Eye, Download, Edit, Trash2, Users, Briefcase, Clock, LogOut, Building2, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -47,7 +47,7 @@ interface Application {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
   const queryClient = useQueryClient();
   const [isCreatingJob, setIsCreatingJob] = useState(false);
   const [newJob, setNewJob] = useState({
@@ -298,6 +298,29 @@ const AdminDashboard = () => {
     );
   }
 
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-center flex items-center justify-center gap-2">
+              <Shield className="h-5 w-5 text-red-500" />
+              Access Denied
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-muted-foreground mb-4">
+              You need admin privileges to access this page.
+            </p>
+            <Button onClick={() => navigate('/jobs')} className="w-full">
+              Back to Jobs
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -315,6 +338,10 @@ const AdminDashboard = () => {
             </div>
             
             <div className="flex items-center gap-4">
+              <Badge variant="secondary" className="bg-green-100 text-green-800">
+                <Shield className="h-3 w-3 mr-1" />
+                Admin
+              </Badge>
               <span className="text-sm text-muted-foreground">
                 Welcome, {user.email}
               </span>
